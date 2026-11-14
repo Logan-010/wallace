@@ -29,7 +29,7 @@ async fn main() -> color_eyre::Result<()> {
     }
 
     download::download(&cli).await?;
-    let mut rx = transcribe::transcribe(&cli).await?;
+    let rx = transcribe::transcribe(&cli).await?;
 
     let shutdown = signal::ctrl_c();
     let task = task::spawn(agent::task(cli, rx));
