@@ -7892,6 +7892,7 @@ dependencies = [
  "moonshine-rs",
  "reqwest 0.13.5",
  "rig",
+ "serde",
  "serde_json",
  "silero-vad-crs",
  "tokio",
