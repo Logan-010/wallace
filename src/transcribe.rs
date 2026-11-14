@@ -1,6 +1,7 @@
 use crate::{
     TOKEN,
     cli::Cli,
+    speech::PLAYBACK,
     vad::{Event, Vad},
 };
 use color_eyre::eyre::ContextCompat;
@@ -62,18 +63,22 @@ fn blocking_task(
     let config = supported.into();
 
     let mut vad = Vad::new(sample_rate)?;
-    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<color_eyre::Result<Vec<f32>>>(32);
+    let (audio_tx, audio_rx) =
+        std::sync::mpsc::sync_channel::<color_eyre::Result<(u64, Vec<f32>)>>(32);
     let error_tx = audio_tx.clone();
 
     let input = device.build_input_stream(
         config,
         move |data: &[f32], _| {
+            let Ok(generation) = PLAYBACK.try_read() else {
+                return;
+            };
             let mono: Vec<f32> = data
                 .chunks_exact(channels)
                 .map(|frame| frame.iter().sum::<f32>() / channels as f32)
                 .collect();
 
-            let _ = audio_tx.try_send(Ok(mono));
+            let _ = audio_tx.try_send(Ok((*generation, mono)));
         },
         move |err| {
             let _ = error_tx.try_send(Err(err.into()));
@@ -86,15 +91,30 @@ fn blocking_task(
     tracing::info!("Listening at {sample_rate} Hz...");
 
     let mut last_update = Instant::now();
-    let mut last_text = String::new();
 
     let mut has_audio = false;
+    let mut generation = 0;
     while !TOKEN.is_cancelled() && !tx.is_closed() {
-        let samples = match audio_rx.recv_timeout(Duration::from_millis(100)) {
+        let Ok(playback) = PLAYBACK.try_read() else {
+            std::thread::sleep(Duration::from_millis(20));
+            continue;
+        };
+        if generation != *playback {
+            vad = Vad::new(sample_rate)?;
+            stream = ts.create_stream()?;
+            has_audio = false;
+            last_update = Instant::now();
+            generation = *playback;
+        }
+        let (captured_generation, samples) = match audio_rx.recv_timeout(Duration::from_millis(100))
+        {
             Ok(samples) => samples?,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(error) => return Err(error.into()),
         };
+        if captured_generation != generation {
+            continue;
+        }
         for event in vad.push(&samples)? {
             match event {
                 Event::Audio(audio) => {
@@ -102,41 +122,27 @@ fn blocking_task(
                     has_audio = true;
                 }
                 Event::End => {
-                    publish(stream.finalize()?.text(), &mut last_text, &tx)?;
+                    publish(stream.finalize()?.text(), &tx)?;
                     stream = ts.create_stream()?;
                     has_audio = false;
-                    last_text.clear();
                 }
             }
         }
 
         if has_audio && last_update.elapsed() >= Duration::from_millis(250) {
-            let transcript = stream.poll(false)?;
-
-            publish(transcript.text(), &mut last_text, &tx)?;
+            // Keep inference incremental, but only publish finalized utterances.
+            stream.poll(false)?;
 
             last_update = Instant::now();
         }
     }
     drop(input);
-    if has_audio && !tx.is_closed() {
-        let tail = vad.finish();
-        if !tail.is_empty() {
-            stream.add_audio(&tail, sample_rate)?;
-        }
-        publish(stream.finalize()?.text(), &mut last_text, &tx)?;
-    }
     Ok(())
 }
 
-fn publish(
-    text: String,
-    last_text: &mut String,
-    tx: &mpsc::Sender<color_eyre::Result<String>>,
-) -> color_eyre::Result<()> {
-    if !text.trim().is_empty() && text != *last_text {
-        tx.blocking_send(Ok(text.clone()))?;
-        *last_text = text;
+fn publish(text: String, tx: &mpsc::Sender<color_eyre::Result<String>>) -> color_eyre::Result<()> {
+    if !text.trim().is_empty() {
+        tx.blocking_send(Ok(text))?;
     }
     Ok(())
 }

@@ -36,14 +36,6 @@ impl Vad {
         self.pending.drain(..consumed);
         Ok(events)
     }
-
-    pub fn finish(&mut self) -> Vec<f32> {
-        if self.gate.active {
-            std::mem::take(&mut self.pending)
-        } else {
-            Vec::new()
-        }
-    }
 }
 
 #[derive(Default)]
@@ -119,16 +111,6 @@ mod tests {
                 assert!(vad.push(&[0.0; 127]).unwrap().is_empty());
             }
             assert!(vad.pending.len() < vad.model.source_window_samples());
-            assert!(vad.finish().is_empty());
         }
-    }
-
-    #[test]
-    fn finish_preserves_pending_audio_during_speech() {
-        let mut vad = Vad::new(16_000).unwrap();
-        vad.gate.active = true;
-        vad.pending = vec![0.25; 100];
-        assert_eq!(vad.finish(), vec![0.25; 100]);
-        assert!(vad.finish().is_empty());
     }
 }

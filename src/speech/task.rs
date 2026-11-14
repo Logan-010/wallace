@@ -67,6 +67,8 @@ fn blocking_task(
                 break;
             }
             let config = supported.config();
+            let mut playback = super::PLAYBACK.write().unwrap();
+            *playback = playback.wrapping_add(1);
             let stream = match supported.sample_format() {
                 cpal::SampleFormat::F32 => output_stream::<f32>(&device, config, audio),
                 cpal::SampleFormat::F64 => output_stream::<f64>(&device, config, audio),
