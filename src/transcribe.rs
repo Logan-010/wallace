@@ -1,4 +1,8 @@
-use crate::{TOKEN, cli::Cli};
+use crate::{
+    TOKEN,
+    cli::Cli,
+    vad::{Event, Vad},
+};
 use color_eyre::eyre::ContextCompat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use moonshine_rs::{ModelArch, Transcriber};
@@ -7,7 +11,7 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
-use tokio::{select, sync::mpsc, task};
+use tokio::{sync::mpsc, task};
 
 pub async fn transcribe(
     cli: &Cli,
@@ -24,12 +28,14 @@ pub async fn transcribe(
     let (tx, rx) = mpsc::channel(100);
 
     task::spawn(async move {
-        select! {
-            _ = TOKEN.cancelled() => {}
-            res = task::spawn_blocking(move || blocking_task(dir, arch, tx)) => if let Err(e) = res {
-                tracing::error!("Worker exited: {e:?}");
-            }
-        }
+        let worker_tx = tx.clone();
+        let result = task::spawn_blocking(move || blocking_task(dir, arch, worker_tx)).await;
+        let error = match result {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => error,
+            Err(error) => error.into(),
+        };
+        let _ = tx.send(Err(error)).await;
     });
 
     Ok(rx)
@@ -57,7 +63,9 @@ fn blocking_task(
     let channels = supported.channels() as usize;
     let config = supported.into();
 
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
+    let mut vad = Vad::new(sample_rate)?;
+    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<color_eyre::Result<Vec<f32>>>(32);
+    let error_tx = audio_tx.clone();
 
     let input = device.build_input_stream(
         config,
@@ -67,9 +75,11 @@ fn blocking_task(
                 .map(|frame| frame.iter().sum::<f32>() / channels as f32)
                 .collect();
 
-            let _ = tx.try_send(mono);
+            let _ = audio_tx.try_send(Ok(mono));
         },
-        |err| tracing::warn!("Microphone error: {err}"),
+        move |err| {
+            let _ = error_tx.try_send(Err(err.into()));
+        },
         None,
     )?;
 
@@ -80,33 +90,55 @@ fn blocking_task(
     let mut last_update = Instant::now();
     let mut last_text = String::new();
 
-    loop {
-        let samples = rx.recv()?;
-
-        stream.add_audio(&samples, sample_rate)?;
-
-        if last_update.elapsed() >= Duration::from_millis(250) {
-            let transcript = stream.poll(false)?;
-
-            for line in &transcript.lines {
-                if line.is_updated || line.is_new {
-                    let status = if line.is_complete { "FINAL" } else { "PARTIAL" };
-                    println!(
-                        "[{status}] line {}: [{:.2}s - {:.2}s] {}",
-                        line.id,
-                        line.start_time,
-                        line.start_time + line.duration,
-                        line.text
-                    );
+    let mut has_audio = false;
+    while !TOKEN.is_cancelled() && !tx.is_closed() {
+        let samples = match audio_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(samples) => samples?,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(error) => return Err(error.into()),
+        };
+        for event in vad.push(&samples)? {
+            match event {
+                Event::Audio(audio) => {
+                    stream.add_audio(&audio, sample_rate)?;
+                    has_audio = true;
+                }
+                Event::End => {
+                    publish(stream.finalize()?.text(), &mut last_text, &tx)?;
+                    stream = ts.create_stream()?;
+                    has_audio = false;
+                    last_text.clear();
                 }
             }
+        }
 
-            if text != last_text {
-                println!("{text}");
-                last_text = text;
-            }
+        if has_audio && last_update.elapsed() >= Duration::from_millis(250) {
+            let transcript = stream.poll(false)?;
+
+            publish(transcript.text(), &mut last_text, &tx)?;
 
             last_update = Instant::now();
         }
     }
+    drop(input);
+    if has_audio && !tx.is_closed() {
+        let tail = vad.finish();
+        if !tail.is_empty() {
+            stream.add_audio(&tail, sample_rate)?;
+        }
+        publish(stream.finalize()?.text(), &mut last_text, &tx)?;
+    }
+    Ok(())
+}
+
+fn publish(
+    text: String,
+    last_text: &mut String,
+    tx: &mpsc::Sender<color_eyre::Result<String>>,
+) -> color_eyre::Result<()> {
+    if !text.trim().is_empty() && text != *last_text {
+        tx.blocking_send(Ok(text.clone()))?;
+        *last_text = text;
+    }
+    Ok(())
 }

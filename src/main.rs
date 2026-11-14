@@ -1,6 +1,7 @@
 mod cli;
 mod download;
 mod transcribe;
+mod vad;
 
 use clap::Parser;
 use cli::Cli;
@@ -26,6 +27,27 @@ async fn main() -> color_eyre::Result<()> {
 
     download::download(&cli).await?;
     let mut rx = transcribe::transcribe(&cli).await?;
+
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
+    let mut stopping = false;
+    loop {
+        tokio::select! {
+            signal = &mut shutdown, if !stopping => {
+                TOKEN.cancel();
+                signal?;
+                stopping = true;
+            }
+            result = rx.recv() => match result {
+                Some(Ok(text)) => println!("{text}"),
+                Some(Err(error)) => {
+                    TOKEN.cancel();
+                    return Err(error);
+                }
+                None => break,
+            }
+        }
+    }
 
     Ok(())
 }
