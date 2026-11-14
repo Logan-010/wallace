@@ -24,12 +24,11 @@ pub async fn transcribe(
             .join("models"),
     };
 
-    let arch = cli.arch.into();
     let (tx, rx) = mpsc::channel(100);
 
     task::spawn(async move {
         let worker_tx = tx.clone();
-        let result = task::spawn_blocking(move || blocking_task(dir, arch, worker_tx)).await;
+        let result = task::spawn_blocking(move || blocking_task(dir, worker_tx)).await;
         let error = match result {
             Ok(Ok(())) => return,
             Ok(Err(error)) => error,
@@ -43,10 +42,9 @@ pub async fn transcribe(
 
 fn blocking_task(
     dir: PathBuf,
-    arch: ModelArch,
     tx: mpsc::Sender<color_eyre::Result<String>>,
 ) -> color_eyre::Result<()> {
-    let ts = Transcriber::from_files(dir, arch, None)?;
+    let ts = Transcriber::from_files(dir, ModelArch::TinyStreaming, None)?;
     let mut stream = ts.create_stream()?;
 
     let host = cpal::default_host();

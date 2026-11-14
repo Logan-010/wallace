@@ -61,6 +61,8 @@
         buildEnv = {
           LIBCLANG_PATH = "${llvm.libclang.lib}/lib";
 
+          ALSA_PLUGIN_DIR = "${pkgs.pipewire}/lib/alsa-lib";
+
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             llvm.libclang.lib
             llvm.llvm.lib

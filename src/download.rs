@@ -1,6 +1,6 @@
 use crate::cli::Cli;
 use color_eyre::eyre::ContextCompat;
-use moonshine_rs::{SttDependenciesOptions, get_stt_dependencies_with_options};
+use moonshine_rs::{ModelArch, SttDependenciesOptions, get_stt_dependencies_with_options};
 use std::env;
 use tokio::fs;
 
@@ -18,8 +18,8 @@ pub async fn download(cli: &Cli) -> color_eyre::Result<()> {
     }
 
     let manifest_json = get_stt_dependencies_with_options(
-        &cli.language,
-        &SttDependenciesOptions::new().with_arch(cli.arch.into()),
+        "en",
+        &SttDependenciesOptions::new().with_arch(ModelArch::TinyStreaming),
     )?;
     let manifest: serde_json::Value = serde_json::from_str(&manifest_json)?;
 
