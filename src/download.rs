@@ -1,7 +1,10 @@
-use crate::cli::Cli;
-use color_eyre::eyre::ContextCompat;
-use moonshine_rs::{ModelArch, SttDependenciesOptions, get_stt_dependencies_with_options};
-use std::env;
+use crate::{cli::Cli, speech::VOICE};
+use color_eyre::eyre::{ContextCompat, ensure};
+use moonshine_rs::{
+    ModelArch, SttDependenciesOptions, TtsOptions, get_stt_dependencies_with_options,
+    get_tts_dependencies,
+};
+use std::{env, path::Path};
 use tokio::fs;
 
 pub async fn download(cli: &Cli) -> color_eyre::Result<()> {
@@ -17,11 +20,27 @@ pub async fn download(cli: &Cli) -> color_eyre::Result<()> {
         fs::create_dir_all(&dir).await?;
     }
 
-    let manifest_json = get_stt_dependencies_with_options(
-        "en",
-        &SttDependenciesOptions::new().with_arch(ModelArch::TinyStreaming),
-    )?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest_json)?;
+    let manifests = [
+        get_stt_dependencies_with_options(
+            "en",
+            &SttDependenciesOptions::new().with_arch(ModelArch::TinyStreaming),
+        )?,
+        get_tts_dependencies(Some("en"), Some(&TtsOptions::new().with_voice(VOICE)))?,
+    ];
+    let client = reqwest::Client::new();
+    for manifest in manifests {
+        download_manifest(&client, &dir, &manifest).await?;
+    }
+
+    Ok(())
+}
+
+async fn download_manifest(
+    client: &reqwest::Client,
+    dir: &Path,
+    manifest: &str,
+) -> color_eyre::Result<()> {
+    let manifest: serde_json::Value = serde_json::from_str(manifest)?;
 
     let groups = manifest["groups"]
         .as_array()
@@ -43,12 +62,58 @@ pub async fn download(cli: &Cli) -> color_eyre::Result<()> {
                 }
             }
 
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+
             tracing::info!("Fetch {name} <- {url}");
-            let bytes = reqwest::get(url).await?.bytes().await?;
-            fs::write(&dest, &bytes).await?;
+            let bytes = client
+                .get(url)
+                .send()
+                .await?
+                .error_for_status()?
+                .bytes()
+                .await?;
+            ensure!(
+                expected_size == 0 || bytes.len() as u64 == expected_size,
+                "Unexpected download size for {name}"
+            );
+            let mut temporary = dest.as_os_str().to_os_string();
+            temporary.push(".part");
+            fs::write(&temporary, &bytes).await?;
+            fs::rename(&temporary, &dest).await?;
             tracing::info!("Wrote {} bytes to {}", bytes.len(), dest.display());
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tts_manifest_includes_only_the_selected_voice_and_phonemizer() {
+        let json =
+            get_tts_dependencies(Some("en"), Some(&TtsOptions::new().with_voice(VOICE))).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let names: Vec<_> = manifest["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|group| group["files"].as_array().unwrap())
+            .map(|file| file["name"].as_str().unwrap())
+            .collect();
+
+        assert!(names.contains(&"en_us/g2p-config.json"));
+        assert!(names.contains(&"en_us/oov/model.ort"));
+        assert!(names.iter().any(|name| name.contains("en_US-ryan-low")));
+        assert!(
+            names
+                .iter()
+                .all(|name| { !name.contains("piper-voices/") || name.contains("en_US-ryan-low") })
+        );
+        assert!(names.iter().all(|name| !name.contains("kokoro")));
+    }
 }
