@@ -1,6 +1,9 @@
 mod task;
 pub use task::task;
 
+mod tool;
+pub use tool::SpeechTool;
+
 pub(crate) const VOICE: &str = "piper_en_US-ryan-low";
 
 // Playback holds the write lock; microphone capture and STT hold read locks.

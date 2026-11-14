@@ -1,7 +1,9 @@
 use crate::{agent::util, cli::Cli};
 use color_eyre::eyre::ContextCompat;
+use rig::sqlite::SqliteSessionStore;
 use std::env;
 use tokio::sync::mpsc;
+use tokio_rusqlite::Connection;
 
 pub async fn task(
     cli: Cli,
@@ -14,6 +16,16 @@ pub async fn task(
             .join(".wallace")
             .join("memory.db"),
     };
+
+    let model = util::connect_at(
+        &cli.provider,
+        cli.credentials.as_deref(),
+        cli.base_url.as_deref(),
+    )
+    .await?;
+
+    let conn = Connection::open(dir).await?;
+    let memory = SqliteSessionStore::open(conn).await?;
 
     let (speech_tx, mut speech_rx) = crate::speech::task(&cli).await?;
 
