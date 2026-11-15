@@ -26,4 +26,8 @@ pub struct Cli {
     /// Base url for provider
     #[arg(long, short, env = "WALLACE_BASE_URL")]
     pub base_url: Option<String>,
+
+    /// Brave API key
+    #[arg(long, short = 'B', env = "BRAVE_API_KEY")]
+    pub brave_api_key: Option<String>,
 }

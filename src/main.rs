@@ -1,7 +1,6 @@
 mod agent;
 mod cli;
 mod download;
-mod speech;
 mod transcribe;
 mod vad;
 
@@ -17,6 +16,8 @@ static TOKEN: LazyLock<CancellationToken> = LazyLock::new(CancellationToken::new
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
+
+    dotenv::dotenv().ok();
 
     let cli = Cli::parse();
 

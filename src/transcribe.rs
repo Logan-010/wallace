@@ -1,7 +1,7 @@
 use crate::{
     TOKEN,
+    agent::tools::speech::PLAYBACK,
     cli::Cli,
-    speech::PLAYBACK,
     vad::{Event, Vad},
 };
 use color_eyre::eyre::ContextCompat;

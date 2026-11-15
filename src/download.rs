@@ -1,4 +1,4 @@
-use crate::{cli::Cli, speech::VOICE};
+use crate::{agent::tools::speech::VOICE, cli::Cli};
 use color_eyre::eyre::{ContextCompat, ensure};
 use moonshine_rs::{
     ModelArch, SttDependenciesOptions, TtsOptions, get_stt_dependencies_with_options,
