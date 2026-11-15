@@ -1,5 +1,5 @@
 use crate::{
-    agent::{tools, util},
+    agent::{memory, tools, util},
     cli::Cli,
 };
 use color_eyre::eyre::ContextCompat;
@@ -31,24 +31,38 @@ pub async fn task(
 
     let conn = Connection::open(dir).await?;
     let memory = SqliteSessionStore::open(conn).await?;
+    memory::prune(&memory, cli.memory_limit.get()).await?;
 
-    let (search, speech) = tools::build(&cli).await?;
+    let (search, speech, cmd) = tools::build(&cli).await?;
 
     let agent = AgentBuilder::new(model)
         .preamble(PROMPT)
-        .memory(memory)
         .tool(search)
         .tool(speech)
-        .default_max_turns(10)
+        .tool(cmd)
+        .default_max_turns(15)
         .build();
 
     while let Some(text) = rx.recv().await {
         match text {
             Ok(t) => {
-                if t.strip_prefix(&cli.wake_word).is_some() {
+                if t.contains(&cli.wake_word) {
                     tracing::info!("Prompting agent: {t}");
-                    if let Err(e) = agent.prompt(t).await {
-                        tracing::warn!("Agent error: {e:?}");
+                    let mut conversation = rig::memory::load_async(&memory, memory::LOG).await?;
+                    let history = rig::memory::recent::view(
+                        conversation.messages(),
+                        &rig::memory::recent::LastMessages(cli.memory_limit.get()),
+                    );
+                    match agent.prompt(t).history(history.iter().cloned()).await {
+                        Ok(response) => {
+                            for message in response.messages {
+                                conversation.push(message);
+                            }
+                            rig::memory::save_async(&memory, memory::LOG, &mut conversation)
+                                .await?;
+                            memory::prune(&memory, cli.memory_limit.get()).await?;
+                        }
+                        Err(e) => tracing::warn!("Agent error: {e:?}"),
                     }
                 } else {
                     tracing::debug!("Skipping non-wake speech: {t}");
