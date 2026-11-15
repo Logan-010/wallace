@@ -4,7 +4,7 @@ use crate::{
 };
 use color_eyre::eyre::ContextCompat;
 use rig::{AgentBuilder, sqlite::SqliteSessionStore};
-use std::env;
+use std::{env, time::Instant};
 use tokio::sync::mpsc;
 use tokio_rusqlite::Connection;
 
@@ -50,7 +50,15 @@ pub async fn task(
         match text {
             Ok(t) => {
                 if t.to_lowercase().contains(&ww) {
+                    let pause = crate::transcribe::pause();
+                    // No previously recognized utterance should run after this request.
+                    while let Ok(pending) = rx.try_recv() {
+                        if let Err(e) = pending {
+                            tracing::warn!("STT error: {e:?}");
+                        }
+                    }
                     tracing::info!("Prompting agent: {t}");
+                    let started = Instant::now();
                     let mut conversation = rig::memory::load_async(&memory, memory::LOG).await?;
                     let history = rig::memory::recent::view(
                         conversation.messages(),
@@ -65,14 +73,19 @@ pub async fn task(
                             rig::memory::save_async(&memory, memory::LOG, &mut conversation)
                                 .await?;
                             memory::prune(&memory, cli.memory_limit.get()).await?;
+                            tracing::info!(
+                                elapsed_ms = started.elapsed().as_millis(),
+                                "Agent run finished; ready for the next query"
+                            );
                         }
                         Err(e) => tracing::warn!("Agent error: {e:?}"),
                     }
+                    drop(pause);
                 } else {
                     tracing::debug!("Skipping non-wake speech: {t}");
                 }
             }
-            Err(e) => tracing::warn!("TTS error: {e:?}"),
+            Err(e) => tracing::warn!("STT error: {e:?}"),
         }
     }
 
