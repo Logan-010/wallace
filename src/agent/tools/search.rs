@@ -69,6 +69,8 @@ impl Tool for SearchTool {
         _context: &mut ToolContext,
         args: Self::Args,
     ) -> Result<Self::Output, Self::Error> {
+        tracing::info!("Searching for: {}", args.query);
+
         let data: Value = self
             .client
             .get("https://api.search.brave.com/res/v1/web/search")

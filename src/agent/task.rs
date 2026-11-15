@@ -39,14 +39,19 @@ pub async fn task(
         .memory(memory)
         .tool(search)
         .tool(speech)
+        .default_max_turns(10)
         .build();
 
     while let Some(text) = rx.recv().await {
         match text {
             Ok(t) => {
-                tracing::info!("Prompting agent: {t}");
-                if let Err(e) = agent.prompt(t).await {
-                    tracing::warn!("Agent error: {e:?}");
+                if t.strip_prefix(&cli.wake_word).is_some() {
+                    tracing::info!("Prompting agent: {t}");
+                    if let Err(e) = agent.prompt(t).await {
+                        tracing::warn!("Agent error: {e:?}");
+                    }
+                } else {
+                    tracing::debug!("Skipping non-wake speech: {t}");
                 }
             }
             Err(e) => tracing::warn!("TTS error: {e:?}"),

@@ -30,4 +30,8 @@ pub struct Cli {
     /// Brave API key
     #[arg(long, short = 'B', env = "BRAVE_API_KEY")]
     pub brave_api_key: Option<String>,
+
+    /// Wake word
+    #[arg(long, short, env = "WALLACE_WAKE_WORD", default_value_t = String::from("Wallace"))]
+    pub wake_word: String,
 }

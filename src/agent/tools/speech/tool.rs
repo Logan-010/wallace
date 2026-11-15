@@ -47,6 +47,7 @@ impl Tool for SpeechTool {
         _context: &mut ToolContext,
         args: Self::Args,
     ) -> Result<Self::Output, Self::Error> {
+        tracing::info!("Sending TTS: {}", args.text);
         self.0.send(args.text).await?;
         Ok("Speech queued.")
     }
