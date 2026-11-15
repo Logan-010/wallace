@@ -36,6 +36,7 @@ pub async fn task(
     let (search, speech, cmd) = tools::build(&cli).await?;
 
     let agent = AgentBuilder::new(model)
+        .name("Wallace")
         .preamble(PROMPT)
         .tool(search)
         .tool(speech)
@@ -43,10 +44,12 @@ pub async fn task(
         .default_max_turns(15)
         .build();
 
+    let ww = cli.wake_word.to_lowercase();
+
     while let Some(text) = rx.recv().await {
         match text {
             Ok(t) => {
-                if t.contains(&cli.wake_word) {
+                if t.to_lowercase().contains(&ww) {
                     tracing::info!("Prompting agent: {t}");
                     let mut conversation = rig::memory::load_async(&memory, memory::LOG).await?;
                     let history = rig::memory::recent::view(
@@ -55,6 +58,7 @@ pub async fn task(
                     );
                     match agent.prompt(t).history(history.iter().cloned()).await {
                         Ok(response) => {
+                            tracing::debug!("Agent response: {response:?}");
                             for message in response.messages {
                                 conversation.push(message);
                             }

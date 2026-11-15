@@ -62,7 +62,14 @@ fn blocking_task(
             Err(mpsc::error::TryRecvError::Disconnected) => break,
         };
         if !text.trim().is_empty() {
+            let started = Instant::now();
+            tracing::debug!("Synthesizing TTS: {text}");
             let audio = synthesizer.synthesize(&text, None)?;
+            tracing::info!(
+                synthesis_ms = started.elapsed().as_millis(),
+                audio_seconds = audio.pcm.len() as f64 / audio.sample_rate as f64,
+                "TTS synthesized"
+            );
             if TOKEN.is_cancelled() || tx.is_closed() {
                 break;
             }
@@ -83,6 +90,8 @@ fn blocking_task(
                 format => bail!("Unsupported output sample format: {format}"),
             }?;
             stream.0.play()?;
+            let started = Instant::now();
+            tracing::info!("TTS playback started");
             loop {
                 if TOKEN.is_cancelled() || tx.is_closed() {
                     return Ok(());
@@ -106,6 +115,10 @@ fn blocking_task(
                     Err(error) => return Err(error.into()),
                 }
             }
+            tracing::info!(
+                playback_ms = started.elapsed().as_millis(),
+                "TTS playback finished"
+            );
         }
         let mut result = Ok(());
         loop {

@@ -60,7 +60,7 @@ impl Tool for CmdTool {
 }
 
 fn run_command(command: &str) -> Result<String, CmdError> {
-    tracing::info!("vOBOS is running the command \"{}\"", command);
+    tracing::info!("Running the command \"{}\"", command);
 
     #[cfg(target_os = "windows")]
     let output = Command::new("cmd").args(["/C", command]).output();
