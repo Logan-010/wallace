@@ -2,6 +2,7 @@ mod cmd;
 mod datetime;
 mod search;
 pub mod speech;
+mod weather;
 
 use crate::cli::Cli;
 use tokio::{sync::mpsc, task};
