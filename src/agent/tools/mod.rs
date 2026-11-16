@@ -1,4 +1,5 @@
 mod cmd;
+mod data;
 mod datetime;
 mod search;
 pub mod speech;
@@ -6,9 +7,11 @@ mod weather;
 
 use crate::cli::Cli;
 use tokio::{sync::mpsc, task};
+use tokio_rusqlite::Connection;
 
 pub async fn build(
     cli: &Cli,
+    db: &Connection,
 ) -> color_eyre::Result<(
     search::SearchTool,
     speech::SpeechTool,
@@ -16,6 +19,8 @@ pub async fn build(
     datetime::DateTimeTool,
     weather::WeatherTool,
 )> {
+    data::migrate(db).await?;
+
     let search = search::SearchTool::new(cli.brave_api_key.clone())?;
     let (speech_tx, speech_rx) = speech::task(cli).await?;
     let speech = speech::SpeechTool::new(speech_tx);

@@ -30,10 +30,11 @@ pub async fn task(
     .await?;
 
     let conn = Connection::open(dir).await?;
+
+    let (search, speech, cmd, datetime, weather) = tools::build(&cli, &conn).await?;
+
     let memory = SqliteSessionStore::open(conn).await?;
     memory::prune(&memory, cli.memory_limit.get()).await?;
-
-    let (search, speech, cmd, datetime, weather) = tools::build(&cli).await?;
 
     let agent = AgentBuilder::new(model)
         .name("Wallace")
