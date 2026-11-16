@@ -31,7 +31,7 @@ pub async fn task(
 
     let conn = Connection::open(dir).await?;
 
-    let (search, speech, cmd, datetime, weather, timer, reminders) =
+    let (search, speech, cmd, datetime, weather, timer, reminders, notes) =
         tools::build(&cli, &conn).await?;
 
     let memory = SqliteSessionStore::open(conn).await?;
@@ -47,6 +47,7 @@ pub async fn task(
         .tool(weather)
         .tool(timer)
         .tool(reminders)
+        .tool(notes)
         .default_max_turns(15)
         .build();
 
