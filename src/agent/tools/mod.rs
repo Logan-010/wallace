@@ -20,6 +20,7 @@ pub async fn build(
     datetime::DateTimeTool,
     weather::WeatherTool,
     timer::TimersTool,
+    data::RemindersTool,
 )> {
     data::migrate(db).await?;
 
@@ -30,14 +31,14 @@ pub async fn build(
     let datetime = datetime::DateTimeTool;
     let weather = weather::WeatherTool::new()?;
     let (timer, timer_rx) = timer::TimersTool::new();
-    let (reminders, reminder_rx) = data::RemindersTool::new(db);
+    let (reminders, reminder_rx) = data::RemindersTool::new(db).await?;
     let notes = data::NotesTool::new(db);
 
     task::spawn(monitor_speech(speech_rx));
     task::spawn(monitor_timers(speech_tx.clone(), timer_rx));
     task::spawn(monitor_reminders(speech_tx, reminder_rx));
 
-    Ok((search, speech, cmd, datetime, weather, timer))
+    Ok((search, speech, cmd, datetime, weather, timer, reminders))
 }
 
 async fn monitor_speech(mut rx: mpsc::Receiver<color_eyre::Result<()>>) {
