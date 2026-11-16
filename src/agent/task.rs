@@ -33,7 +33,7 @@ pub async fn task(
     let memory = SqliteSessionStore::open(conn).await?;
     memory::prune(&memory, cli.memory_limit.get()).await?;
 
-    let (search, speech, cmd, datetime) = tools::build(&cli).await?;
+    let (search, speech, cmd, datetime, weather) = tools::build(&cli).await?;
 
     let agent = AgentBuilder::new(model)
         .name("Wallace")
@@ -42,6 +42,7 @@ pub async fn task(
         .tool(speech)
         .tool(cmd)
         .tool(datetime)
+        .tool(weather)
         .default_max_turns(15)
         .build();
 

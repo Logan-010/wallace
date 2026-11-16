@@ -14,16 +14,18 @@ pub async fn build(
     speech::SpeechTool,
     cmd::CmdTool,
     datetime::DateTimeTool,
+    weather::WeatherTool,
 )> {
     let search = search::SearchTool::new(cli.brave_api_key.clone())?;
     let (speech_tx, speech_rx) = speech::task(cli).await?;
     let speech = speech::SpeechTool::new(speech_tx);
     let cmd = cmd::CmdTool;
     let datetime = datetime::DateTimeTool;
+    let weather = weather::WeatherTool::new()?;
 
     task::spawn(monitor_speech(speech_rx));
 
-    Ok((search, speech, cmd, datetime))
+    Ok((search, speech, cmd, datetime, weather))
 }
 
 async fn monitor_speech(mut rx: mpsc::Receiver<color_eyre::Result<()>>) {
