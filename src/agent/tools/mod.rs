@@ -19,6 +19,7 @@ pub async fn build(
     cmd::CmdTool,
     datetime::DateTimeTool,
     weather::WeatherTool,
+    timer::TimersTool,
 )> {
     data::migrate(db).await?;
 
@@ -36,7 +37,7 @@ pub async fn build(
     task::spawn(monitor_timers(speech_tx.clone(), timer_rx));
     task::spawn(monitor_reminders(speech_tx, reminder_rx));
 
-    Ok((search, speech, cmd, datetime, weather))
+    Ok((search, speech, cmd, datetime, weather, timer))
 }
 
 async fn monitor_speech(mut rx: mpsc::Receiver<color_eyre::Result<()>>) {
